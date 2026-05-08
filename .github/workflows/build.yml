@@ -24,9 +24,6 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             archive: recovery-aarch64-linux.tar.gz
-          - os: macos-13
-            target: x86_64-apple-darwin
-            archive: recovery-x86_64-macos.tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
             archive: recovery-aarch64-macos.tar.gz
@@ -35,7 +32,7 @@ jobs:
             archive: recovery-x86_64-windows.zip
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -72,7 +69,7 @@ jobs:
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.archive }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.archive }}
           path: ${{ matrix.archive }}
@@ -85,7 +82,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: artifacts
           merge-multiple: true
