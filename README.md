@@ -2,11 +2,13 @@
 
 A command-line recovery tool for nRF91xx series microcontrollers, designed to unlock locked devices and flash firmware.
 
+It targets the [Circuit Dojo nRF9151 Feather](https://www.circuitdojo.com/products/nrf9151-feather) and is built on top of [`probe-rs`](https://probe.rs/) for debug-probe communication and flashing.
+
 ## Overview
 
 This tool provides recovery functionality for nRF91xx devices by:
 - Unlocking locked/protected devices through CTRL-AP erase operations
-- Flashing hex firmware files 
+- Flashing hex firmware files
 - Writing UICR (User Information Configuration Registers) values
 - Performing device reset operations
 
@@ -26,10 +28,6 @@ cargo install --path .
 
 ### Basic Usage
 
-```bash
-recovery <HEX_FILE>
-```
-
 Flash a hex file to the connected nRF91xx device:
 
 ```bash
@@ -39,19 +37,25 @@ recovery firmware.hex
 ### Advanced Options
 
 ```bash
-recovery [OPTIONS] <HEX_FILE>
+recovery [OPTIONS] [IMAGE]
 
 Arguments:
-  <HEX_FILE>  Path to the hex file to flash
+  [IMAGE]  Path to the hex file to flash (optional if --erase-only or --unlock-only is used)
 
 Options:
-  -t, --timeout <TIMEOUT>      Timeout in milliseconds for probe connection [default: 2000]
-  -f, --force                  Force unlock even if device appears unlocked
-      --vendor-id <VENDOR_ID>  Vendor ID for debug probe [default: 11914]
-      --product-id <PRODUCT_ID> Product ID for debug probe [default: 12]
-  -s, --serial <SERIAL>        Serial number of debug probe
-  -h, --help                   Print help
-  -V, --version                Print version
+  -t, --timeout <TIMEOUT>            Timeout in milliseconds for probe connection [default: 2000]
+  -f, --force                        Force unlock even if device appears unlocked
+      --vendor-id <VENDOR_ID>        Vendor ID for debug probe [default: 0x2e8a]
+      --product-id <PRODUCT_ID>      Product ID for debug probe [default: 0x000c]
+  -s, --serial <SERIAL>              Serial number of debug probe
+  -r, --retries <RETRIES>            Number of retry attempts for unlock/erase operations [default: 3]
+      --erase-timeout <MS>           CTRL-AP erase timeout in milliseconds [default: 5000]
+      --skip-uicr                    Skip APPROTECT/SECUREAPPROTECT UICR write after flashing
+      --erase-only                   Unlock + erase the device, skip flashing
+      --unlock-only                  Only unlock if locked; skip erase and flashing
+      --swd-speed <KHZ>              SWD speed in kHz (lower is more reliable) [default: 1000]
+  -h, --help                         Print help
+  -V, --version                      Print version
 ```
 
 ### Examples
@@ -76,19 +80,42 @@ Use different probe vendor/product IDs:
 recovery --vendor-id 0x1366 --product-id 0x1051 firmware.hex
 ```
 
+Erase the device without flashing new firmware:
+```bash
+recovery --erase-only
+```
+
+Unlock a locked device without erasing or flashing (note: unlocking a locked nRF91 inherently erases flash via CTRL-AP, so this is a no-op when the device is already unlocked):
+```bash
+recovery --unlock-only
+```
+
+Flash without writing the APPROTECT/SECUREAPPROTECT UICR registers:
+```bash
+recovery --skip-uicr firmware.hex
+```
+
 ## Recovery Process
 
 The tool performs the following sequence:
 
 1. **Probe Connection**: Connects to the debug probe with specified timeout
-2. **Device Unlock**: 
+2. **Device Unlock** (skipped when already unlocked unless `--force`):
    - Checks device lock status via CSW register
-   - Performs CTRL-AP erase operation if locked
+   - Performs CTRL-AP `ERASEALL` if locked (this also erases RAM and UICR)
    - Issues soft reset for nRF91x1 devices
-   - Validates unlock success
-3. **Firmware Flash**: Downloads the hex file to device memory
-4. **UICR Programming**: Writes protection values to UICR registers
-5. **Reset**: Performs final device reset
+   - Retries up to `--retries` times before giving up
+3. **Quick Chip Erase**: Issues an NVMC `ERASEALL` per Nordic's NAN_041 §9.2.1.
+   This is much faster than probe-rs's default sector-by-sector erase
+   (roughly the time of two page erases vs. all 256 pages). Skipped in
+   `--unlock-only` mode.
+4. **Firmware Flash**: Downloads the hex file to device memory with
+   probe-rs's sector erase phase disabled (the chip is already erased).
+   Skipped in `--erase-only` and `--unlock-only` modes.
+5. **UICR Programming**: Writes `0x50FA50FA` to the APPROTECT and
+   SECUREAPPROTECT UICR registers (skipped with `--skip-uicr` or in
+   erase/unlock-only modes).
+6. **Reset**: Performs final device reset
 
 ## Supported Devices
 
