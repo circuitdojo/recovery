@@ -8,11 +8,10 @@ use probe_rs::{
         ArmDebugInterface, FullyQualifiedApAddress,
     },
     flashing::{self, Format},
-    probe::{list::Lister, DebugProbeSelector, Probe},
+    probe::{list::Lister, DebugProbeError, DebugProbeSelector, Probe, ProbeCreationError},
     MemoryInterface, Permissions, Session,
 };
 
-use log;
 use std::thread;
 use std::{path::PathBuf, time::Duration};
 use thiserror::Error;
@@ -67,6 +66,12 @@ struct Args {
         help = "Only unlock the device if locked; skip erase and flashing. Note: unlocking a locked nRF91 inherently erases flash via CTRL-AP."
     )]
     unlock_only: bool,
+
+    #[arg(
+        long,
+        help = "Read the device lock status and exit without modifying the device. Exits 0 if unlocked, 1 if locked."
+    )]
+    verify: bool,
 
     #[arg(
         long,
@@ -181,6 +186,21 @@ fn halt_cpu_if_possible(iface: &mut dyn ArmDebugInterface) -> Result<(), Recover
     }
 
     Ok(())
+}
+
+/// Reads the CSW.DbgStatus bit on AP0 to determine whether the application
+/// access port is enabled. Does not modify any device state.
+fn verify_unlock_status(mut probe: Probe, args: &Args) -> Result<bool, RecoveryError> {
+    let _ = probe.set_speed(args.swd_speed);
+    probe.attach_to_unspecified()?;
+
+    let mut iface = probe
+        .try_into_arm_debug_interface(DefaultArmSequence::create())
+        .map_err(|(_p, e)| RecoveryError::ArmError(e))?;
+
+    iface.select_debug_port(DpAddress::Default)?;
+
+    check_debug_access(iface.as_mut())
 }
 
 fn try_unlock_device_with_retries(mut probe: Probe, args: &Args) -> Result<Probe, RecoveryError> {
@@ -331,12 +351,9 @@ pub fn write_uicr(
     let mut core = session.core(0)?;
 
     // Step 1: Read current value and check if write is possible
-    let current_value = core.read_word_32(addr as u64)?;
+    let current_value = core.read_word_32(addr)?;
     if (current_value & value) != value && current_value != 0xFFFFFFFF {
-        return Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Unable to write",
-        )));
+        return Err(Box::new(std::io::Error::other("Unable to write")));
     }
 
     // Step 2: Enable write (NVMC.CONFIG = 1)
@@ -378,18 +395,46 @@ pub fn write_uicr(
     Ok(())
 }
 
+/// Wraps `Lister::open` to translate a panic from probe-rs's Glasgow driver
+/// into a `NotFound` error. probe-rs 0.31 hits `unreachable!()` in
+/// `glasgow::mux::GlasgowDevice::new_from_selector` when the selector has
+/// `serial_number = None` and no earlier driver opened the probe — typically
+/// when no probe is plugged in. Catching it lets the timeout/retry loop
+/// surface a clean error instead of an unwind.
+fn open_probe_quiet(
+    lister: &Lister,
+    selector: DebugProbeSelector,
+) -> Result<Probe, DebugProbeError> {
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lister.open(selector)));
+    std::panic::set_hook(prev_hook);
+
+    match result {
+        Ok(r) => r,
+        Err(_) => Err(DebugProbeError::ProbeCouldNotBeCreated(
+            ProbeCreationError::NotFound,
+        )),
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     let args = Args::parse();
 
-    if args.erase_only && args.unlock_only {
-        eprintln!("Error: --erase-only and --unlock-only are mutually exclusive");
+    if [args.erase_only, args.unlock_only, args.verify]
+        .iter()
+        .filter(|f| **f)
+        .count()
+        > 1
+    {
+        eprintln!("Error: --erase-only, --unlock-only, and --verify are mutually exclusive");
         std::process::exit(1);
     }
 
     // Validate arguments
-    if !args.erase_only && !args.unlock_only {
+    if !args.erase_only && !args.unlock_only && !args.verify {
         if let Some(ref image) = args.image {
             if !image.exists() {
                 return Err(Box::new(RecoveryError::FileNotFound(
@@ -398,7 +443,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         } else {
             eprintln!(
-                "Error: Image file required unless --erase-only or --unlock-only is specified"
+                "Error: Image file required unless --erase-only, --unlock-only, or --verify is specified"
             );
             std::process::exit(1);
         }
@@ -410,12 +455,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut probe;
 
     loop {
-        probe = match lister.open(DebugProbeSelector {
+        let selector = DebugProbeSelector {
             vendor_id: args.vendor_id,
             product_id: args.product_id,
             interface: None,
             serial_number: args.serial.clone(),
-        }) {
+        };
+        probe = match open_probe_quiet(&lister, selector) {
             Ok(p) => p,
             Err(_e) => {
                 let now = Utc::now().timestamp_millis();
@@ -433,6 +479,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("Got probe!");
+
+    if args.verify {
+        match verify_unlock_status(probe, &args) {
+            Ok(true) => {
+                println!("Device is unlocked");
+                return Ok(());
+            }
+            Ok(false) => {
+                println!("Device is locked");
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("Error verifying device status: {:?}", e);
+                std::process::exit(2);
+            }
+        }
+    }
 
     let _ = probe.set_speed(args.swd_speed);
 

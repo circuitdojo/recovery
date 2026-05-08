@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-05-08
+
+### Added
+- `--verify` flag: read the device lock status and exit without modifying
+  anything. Exits 0 if unlocked, 1 if locked.
+
+### Fixed
+- Catch the `unreachable!()` panic in probe-rs 0.31's Glasgow driver
+  (`glasgow::mux::GlasgowDevice::new_from_selector`) that fired when no
+  probe was connected and no `--serial` was supplied. The probe-open
+  loop now treats it as a regular `NotFound` and surfaces the standard
+  timeout message instead of an unwind.
+
 ## [0.2.0] - 2026-05-08
 
 ### Added
@@ -42,5 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
+[0.2.1]: https://github.com/circuitdojo/recovery/releases/tag/v0.2.1
 [0.2.0]: https://github.com/circuitdojo/recovery/releases/tag/v0.2.0
 [0.1.0]: https://github.com/circuitdojo/recovery/releases/tag/v0.1.0

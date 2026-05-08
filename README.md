@@ -53,6 +53,7 @@ Options:
       --skip-uicr                    Skip APPROTECT/SECUREAPPROTECT UICR write after flashing
       --erase-only                   Unlock + erase the device, skip flashing
       --unlock-only                  Only unlock if locked; skip erase and flashing
+      --verify                       Read lock status and exit (0 = unlocked, 1 = locked)
       --swd-speed <KHZ>              SWD speed in kHz (lower is more reliable) [default: 1000]
   -h, --help                         Print help
   -V, --version                      Print version
@@ -93,6 +94,11 @@ recovery --unlock-only
 Flash without writing the APPROTECT/SECUREAPPROTECT UICR registers:
 ```bash
 recovery --skip-uicr firmware.hex
+```
+
+Check whether the device is currently unlocked, without modifying anything (exits 0 if unlocked, 1 if locked):
+```bash
+recovery --verify
 ```
 
 ## Recovery Process
