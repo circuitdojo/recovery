@@ -55,6 +55,7 @@ Options:
       --unlock-only                  Only unlock if locked; skip erase and flashing
       --verify                       Read lock status and exit (0 = unlocked, 1 = locked)
       --swd-speed <KHZ>              SWD speed in kHz (lower is more reliable) [default: 1000]
+      --no-reset                     Skip the final device reset
   -h, --help                         Print help
   -V, --version                      Print version
 ```
@@ -121,7 +122,7 @@ The tool performs the following sequence:
 5. **UICR Programming**: Writes `0x50FA50FA` to the APPROTECT and
    SECUREAPPROTECT UICR registers (skipped with `--skip-uicr` or in
    erase/unlock-only modes).
-6. **Reset**: Performs final device reset
+6. **Reset**: Performs final device reset (skipped with `--no-reset`)
 
 ## Supported Devices
 

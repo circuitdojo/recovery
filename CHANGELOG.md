@@ -5,7 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.3] - 2026-10-15
+
+### Added
+- `--no-reset` skips the final device reset, for callers (such as Zephyr
+  Tools) that connect with probe-rs and reset the device themselves.
+
+### Fixed
+- A failed final reset now prints `Error resetting device: ...` instead of
+  an unlabeled `Error: Timeout`.
 
 ### Changed
 - CI: opt all JavaScript actions into Node.js 24 via the workflow-level
@@ -75,6 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
+[0.2.3]: https://github.com/circuitdojo/recovery/releases/tag/v0.2.3
 [0.2.2]: https://github.com/circuitdojo/recovery/releases/tag/v0.2.2
 [0.2.1]: https://github.com/circuitdojo/recovery/releases/tag/v0.2.1
 [0.2.0]: https://github.com/circuitdojo/recovery/releases/tag/v0.2.0

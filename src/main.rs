@@ -79,6 +79,12 @@ struct Args {
         help = "SWD speed in kHz (lower is more reliable)"
     )]
     swd_speed: u32,
+
+    #[arg(
+        long,
+        help = "Skip the final device reset, for callers that reset the device themselves"
+    )]
+    no_reset: bool,
 }
 
 #[derive(Error, Debug)]
@@ -566,8 +572,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Reset with probe_rs
-    session.core(0)?.reset()?;
+    if args.no_reset {
+        println!("Skipping final reset as requested");
+    } else if let Err(e) = session.core(0).and_then(|mut core| core.reset()) {
+        eprintln!("Error resetting device: {:?}", e);
+        std::process::exit(1);
+    }
 
     println!("Done!");
     Ok(())
